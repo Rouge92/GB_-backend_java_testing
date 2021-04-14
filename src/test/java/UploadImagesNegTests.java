@@ -1,10 +1,15 @@
+import dto.CommonResponse;
 import io.qameta.allure.restassured.AllureRestAssured;
 import io.restassured.RestAssured;
+import io.restassured.builder.RequestSpecBuilder;
+import io.restassured.builder.ResponseSpecBuilder;
+import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
+import io.restassured.specification.ResponseSpecification;
 import org.apache.commons.codec.binary.Base64;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
+import utils.Images;
+import utils.parts;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -15,25 +20,25 @@ import static io.restassured.RestAssured.given;
 import static org.apache.commons.io.FileUtils.readFileToByteArray;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.notNullValue;
+import static utils.Endpoints.POST_IMAGE_REC;
 
 
 public class UploadImagesNegTests extends BaseTest{
-    static final String INPUT_IMG_LARGE_PNG_PATH = "src/test/resources/largePNG.png";
-    static final String INPUT_IMG_LARGE_JPG_PATH = "src/test/resources/largeJPG.jpg";
-    static final String INPUT_IMG_LARGE_GIF_LINK= "https://i.imgur.com/6fWJ7XQ.gif";
-    static final String INPUT_IMG_LARGE_BMP_PATH = "src/test/resources/largeBMP.bmp";
-    static final String INPUT_INVALID_FILE_PATH = "src/test/resources/encoded-20210405133937.txt";
+
+    ResponseSpecification responseNegIMGSpecification = null;
+    RequestSpecification requestSpecification = null;
+    ResponseSpecification responseNegFileSpecification = null;
 
     static byte[] largeBMP;
     static Properties properties;
     static String token;
     static String username;
-    public static String uploadedImageId;
+
 
     @BeforeAll
     static void beforeAll() throws IOException {
         properties = new Properties();
-        File inputFile4 = new File(INPUT_IMG_LARGE_BMP_PATH);
+        File inputFile4 = new File(Images.INPUT_IMG_LARGE_BMP.path);
         RestAssured.filters(new AllureRestAssured());
 
 
@@ -48,76 +53,94 @@ public class UploadImagesNegTests extends BaseTest{
         RestAssured.baseURI = properties.getProperty("base.url");
     }
 
+    @BeforeEach
+    void beforeTest() {
+        responseNegIMGSpecification = new ResponseSpecBuilder()
+                .expectStatusCode(400)
+                .expectStatusLine("HTTP/1.1 400 Bad Request")
+                .expectContentType(ContentType.JSON)
+                .expectBody("success",equalTo(false))
+                .expectBody("data.error",equalTo("File is over the size limit"))
+                .expectBody("status",equalTo(400))
+                .build();
+
+        responseNegFileSpecification = new ResponseSpecBuilder()
+                .expectStatusCode(400)
+                .expectStatusLine("HTTP/1.1 400 Bad Request")
+                .expectContentType(ContentType.JSON)
+                .expectBody("success",equalTo(false))
+                .expectBody("data.error.message",equalTo("File type invalid (1)"))
+                .expectBody("status",equalTo(400))
+                .build();
+
+        requestSpecification = new RequestSpecBuilder()
+                .addHeader("Authorization", token)
+                .setAccept(ContentType.JSON)
+                .build();
+    }
 
 
 
     @Test
     @DisplayName("Large PNG from file upload")
     void uploadLargePNGFromFileTest() {
-       given()
-                .multiPart("image", new File(INPUT_IMG_LARGE_PNG_PATH))
-                .header("Authorization", token)
+        CommonResponse response = given()
+                .multiPart(parts.IMAGE, new File(Images.INPUT_IMG_LARGE_PNG.path))
+                .spec(requestSpecification)
                 .when()
-                .post("https://api.imgur.com/3/image")
+                .post(POST_IMAGE_REC)
                 .prettyPeek()
                 .then()
                 .log()
                 .ifStatusCodeIsEqualTo(200)
-                .body("data.error",equalTo("File is over the size limit"))
-                .body("success",equalTo(false))
-                .body("status",equalTo(400));
+                .spec(responseNegIMGSpecification)
+                .extract()
+                .as(CommonResponse.class);
     }
 
     @Test
     @DisplayName("Large JPG from file upload")
     void uploadLargeJPGFromFileTest() {
-       given()
-                .multiPart("image", new File(INPUT_IMG_LARGE_JPG_PATH))
-                .header("Authorization", token)
+        given()
+                .multiPart(parts.IMAGE, new File(Images.INPUT_IMG_LARGE_JPG.path))
+                .spec(requestSpecification)
                 .when()
-                .post("https://api.imgur.com/3/image")
+                .post(POST_IMAGE_REC)
                 .prettyPeek()
                 .then()
                 .log()
                 .ifStatusCodeIsEqualTo(200)
-                .body("data.error",equalTo("File is over the size limit"))
-                .body("success",equalTo(false))
-                .body("status",equalTo(400));
+                .spec(responseNegIMGSpecification);
     }
 
-    @Test
-    @DisplayName("Large GIF from link upload")
-    void uploadLargeGIFFromLinkTest() {
-        uploadedImageId = given()
-                .multiPart("image", INPUT_IMG_LARGE_GIF_LINK)
-                .header("Authorization", token)
-                .when()
-                .post("https://api.imgur.com/3/image")
-                .prettyPeek()
-                .then()
-             .body("data.type",equalTo("image/gif"))
-             .body("success",equalTo(true))
-             .body("data.id",notNullValue())
-             .body("data.deletehash", notNullValue())
-             .extract()
-             .response()
-             .jsonPath()
-             .getString("data.id");
-    }
+//    @Test
+//    @DisplayName("Large GIF from link upload")
+//    void uploadLargeGIFFromLinkTest() {
+//        given()
+//                .multiPart(parts.IMAGE, Images.INPUT_IMG_LARGE_GIF_LINK.path)
+//                .spec(requestSpecification)
+//                .when()
+//                .post(POST_IMAGE_REC)
+//                .prettyPeek()
+//                .then()
+//                .log()
+//                .ifStatusCodeIsEqualTo(200)
+//                .spec(responseNegIMGSpecification);
+//    }
     @Test
     @DisplayName("Large BMP from Base64 upload")
     void uploadLargeBMPFromBase64Test() {
         String fileContentBase64 = Base64.encodeBase64String(largeBMP);
         given()
-                .multiPart("image", fileContentBase64)
-                .header("Authorization", token)
+                .multiPart(parts.IMAGE, fileContentBase64)
+                .spec(requestSpecification)
                 .when()
-                .post("https://api.imgur.com/3/image")
+                .post(POST_IMAGE_REC)
                 .prettyPeek()
                 .then()
-                .body("data.error",equalTo("File is over the size limit"))
-                .body("success",equalTo(false))
-                .body("status",equalTo(400));
+                .log()
+                .ifStatusCodeIsEqualTo(200)
+                .spec(responseNegIMGSpecification);
     }
 
     @Test
@@ -125,15 +148,15 @@ public class UploadImagesNegTests extends BaseTest{
     void uploadInvalidFormatTest() {
 
         given()
-                .multiPart("image", new File (INPUT_INVALID_FILE_PATH))
-                .header("Authorization", token)
+                .multiPart(parts.IMAGE, new File(Images.INPUT_INVALID_FILE.path))
+                .spec(requestSpecification)
                 .when()
-                .post("https://api.imgur.com/3/image")
+                .post(POST_IMAGE_REC)
                 .prettyPeek()
                 .then()
-                .body("data.error.message",equalTo("File type invalid (1)"))
-                .body("success",equalTo(false))
-                .body("status",equalTo(400));
+                .log()
+                .ifStatusCodeIsEqualTo(200)
+                .spec(responseNegFileSpecification);
     }
 
 }
